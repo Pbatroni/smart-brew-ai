@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Brew AI</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Smart Brew AI</h1>
+    <p class="subtitle">What to make next, during the rush.</p>
+  </header>
+
+  <main class="app-main">
+    <section class="order-form-section">
+      <h2>New Order</h2>
+      <form id="order-form" novalidate>
+        <div class="form-row">
+          <label for="drink-name">Drink Name</label>
+          <input type="text" id="drink-name" name="drinkName" required />
+        </div>
+
+        <div class="form-row">
+          <label for="size">Size</label>
+          <select id="size" name="size">
+            <option value="small">Small</option>
+            <option value="medium" selected>Medium</option>
+            <option value="large">Large</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label for="quantity">Quantity</label>
+          <input type="number" id="quantity" name="quantity" min="1" value="1" required />
+        </div>
+
+        <div class="form-row">
+          <label for="prep-time">Prep Time (minutes)</label>
+          <input type="number" id="prep-time" name="prepTimeMinutes" min="1" value="3" required />
+        </div>
+
+        <div class="form-row">
+          <label for="priority">Priority</label>
+          <select id="priority" name="priority">
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+
+        <p id="form-error" class="form-error" hidden></p>
+
+        <button type="submit">Add Order</button>
+      </form>
+    </section>
+
+    <section class="queue-section">
+      <h2>Active Queue</h2>
+      <ul id="order-queue" class="order-queue"></ul>
+      <p id="empty-queue-message" class="empty-message" hidden>No active orders. Add one to get started.</p>
+    </section>
+  </main>
+
+  <script src="js/orders.js"></script>
+  <script src="js/prioritization.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
