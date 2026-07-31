@@ -1,38 +1,44 @@
-const STORAGE_KEY = 'smart-brew-orders';
+const API_BASE = '/api/orders';
 
-function loadOrders() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (err) {
-    return [];
+class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
   }
 }
 
-function saveOrders(orders) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+async function fetchOrders() {
+  const res = await fetch(API_BASE);
+  if (!res.ok) throw new ApiError(`Failed to fetch orders: ${res.status}`, res.status);
+  return res.json();
 }
 
-function createOrder(fields) {
-  return {
-    id: `${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-    drinkName: fields.drinkName,
-    size: fields.size,
-    quantity: fields.quantity,
-    prepTimeMinutes: fields.prepTimeMinutes,
-    priority: fields.priority,
-    timeReceived: Date.now(),
-    status: 'waiting',
-  };
+async function createOrder(fields) {
+  const res = await fetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.error || `Failed to create order: ${res.status}`, res.status);
+  }
+  return res.json();
 }
 
-function updateOrderStatus(orders, id, status) {
-  return orders.map((order) =>
-    order.id === id ? { ...order, status } : order
-  );
+async function patchOrder(id, fields) {
+  const res = await fetch(`${API_BASE}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.error || `Failed to update order: ${res.status}`, res.status);
+  }
+  return res.json();
 }
 
-function removeCompleted(orders) {
-  return orders.filter((order) => order.status !== 'completed');
+function updateOrderStatus(id, status, expectedVersion) {
+  return patchOrder(id, { status, expectedVersion });
 }

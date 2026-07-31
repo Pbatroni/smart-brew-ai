@@ -1,8 +1,9 @@
 const PRIORITY_WEIGHT = { urgent: 0, high: 1, normal: 2 };
+const FINALIZED_STATUSES = new Set(['completed', 'cancelled']);
 
 function sortOrders(orders) {
   return orders
-    .filter((order) => order.status !== 'completed')
+    .filter((order) => !FINALIZED_STATUSES.has(order.status))
     .slice()
     .sort((a, b) => {
       const priorityDiff = PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority];

@@ -7,7 +7,13 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
+  <div id="connection-banner" class="connection-banner" hidden>Reconnecting to server&hellip;</div>
+
   <header class="app-header">
+    <div class="app-header__controls">
+      <span id="sync-status" class="sync-status">🟢 Live</span>
+      <button type="button" id="sound-toggle" class="sound-toggle" aria-pressed="true" title="Toggle sound">🔊</button>
+    </div>
     <h1>Smart Brew AI</h1>
     <p class="subtitle">What to make next, during the rush.</p>
   </header>
@@ -15,6 +21,7 @@
   <main class="app-main">
     <section class="order-form-section">
       <h2>New Order</h2>
+      <div id="preset-list" class="preset-list"></div>
       <form id="order-form" novalidate>
         <div class="form-row">
           <label for="drink-name">Drink Name</label>
@@ -49,6 +56,11 @@
           </select>
         </div>
 
+        <div class="form-row form-row--checkbox">
+          <input type="checkbox" id="loyalty-member" name="loyaltyMember" />
+          <label for="loyalty-member">⭐ Loyalty Member</label>
+        </div>
+
         <p id="form-error" class="form-error" hidden></p>
 
         <button type="submit">Add Order</button>
@@ -62,8 +74,11 @@
     </section>
   </main>
 
+  <div id="toast-container" class="toast-container"></div>
+
   <script src="js/orders.js"></script>
   <script src="js/prioritization.js"></script>
+  <script src="js/presets.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

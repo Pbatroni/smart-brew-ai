@@ -21,7 +21,17 @@ body {
   color: var(--color-text);
 }
 
+.connection-banner {
+  background: var(--color-urgent);
+  color: #fff;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem;
+}
+
 .app-header {
+  position: relative;
   padding: 1.5rem 1.25rem 1rem;
   text-align: center;
 }
@@ -33,6 +43,34 @@ body {
 .subtitle {
   margin: 0;
   color: var(--color-muted);
+}
+
+.app-header__controls {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sync-status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.sound-toggle {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+  min-height: 36px;
+}
+
+.sound-toggle[aria-pressed='false'] {
+  opacity: 0.5;
 }
 
 .app-main {
@@ -61,11 +99,35 @@ body {
   }
 }
 
+
 section {
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 1.25rem;
+}
+
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+}
+
+.preset-btn {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.preset-btn--active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
 }
 
 .form-row {
@@ -80,12 +142,36 @@ label {
   font-weight: 600;
 }
 
+.form-row--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-row--checkbox input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.form-row--checkbox label {
+  /* The checkbox itself is small; the label (which toggles it via `for`) is
+     the real touch target, so give it the same 44px minimum every other
+     input/button in the app gets rather than shrinking to its text size. */
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
 input,
 select {
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 1rem;
+  min-height: 44px;
 }
 
 button {
@@ -95,6 +181,7 @@ button {
   padding: 0.6rem 1rem;
   font-size: 0.95rem;
   font-weight: 600;
+  min-height: 44px;
 }
 
 #order-form button[type='submit'] {
@@ -157,7 +244,31 @@ button {
   text-transform: capitalize;
 }
 
+.order-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
 .order-card__actions .status-btn {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.order-card__actions .edit-btn,
+.cancel-edit-btn {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.order-card__actions .cancel-btn {
+  background: #fff;
+  border: 1px solid var(--color-urgent);
+  color: var(--color-urgent);
+}
+
+.save-edit-btn {
   background: var(--color-accent);
   color: #fff;
 }
@@ -165,6 +276,78 @@ button {
 .order-card--recommended {
   background: #fbf3e7;
   border-width: 2px;
+}
+
+.order-card--editing {
+  border-left-color: var(--color-accent);
+}
+
+/* Aging is independent of priority (left border) and "recommended" (background
+   tint) so all three can layer on the same card without fighting each other. */
+.order-card--aging-warning {
+  box-shadow: 0 0 0 2px var(--color-high) inset;
+}
+
+.order-card--aging-critical {
+  box-shadow: 0 0 0 3px var(--color-urgent) inset;
+  animation: aging-critical-pulse 2s ease-in-out infinite;
+}
+
+/* A static ring is easy to miss across a room; a slow glow pulse reads in
+   peripheral vision the way a static color change doesn't. Critical only —
+   warning stays static so the pulse still means something distinct. */
+@keyframes aging-critical-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px var(--color-urgent) inset;
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--color-urgent) inset, 0 0 14px 2px rgba(192, 57, 43, 0.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-card--aging-critical {
+    animation: none;
+  }
+}
+
+.wait-time--warning {
+  color: var(--color-high);
+  font-weight: 700;
+}
+
+.wait-time--critical {
+  color: var(--color-urgent);
+  font-weight: 700;
+}
+
+.toast-container {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 10;
+}
+
+.toast {
+  background: var(--color-text);
+  color: #fff;
+  padding: 0.75rem 1.1rem;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.toast button {
+  background: #fff;
+  color: var(--color-text);
+  padding: 0.4rem 0.8rem;
 }
 
 .badge {
@@ -184,5 +367,37 @@ button {
 @media (max-width: 480px) {
   .order-card__meta {
     font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 799px) {
+  /* On a phone/tablet the queue is what a barista touches over and over during
+     a rush; the entry form is comparatively rare. Put the queue first so it's
+     reachable without scrolling past the whole form on every glance. */
+  .queue-section {
+    order: -1;
+  }
+
+  /* Without a cap, a long queue pushes the form further down with every new
+     order, until adding a new drink requires scrolling past the whole list.
+     Bounding the list's own height (not the section — the "Active Queue"
+     heading stays put) keeps the form's position fixed regardless of queue
+     length; the list scrolls internally instead.
+
+     Targets the #id, not the .class, on purpose: the base .order-queue rule
+     (elsewhere in this file) sets padding:0, and an earlier version of this
+     override used the same .order-queue class — at equal specificity, source
+     order decided the winner, and it silently lost until this block was
+     moved after the base rule. The id selector wins on specificity instead,
+     so this override is correct regardless of where either rule sits in the
+     file — a future edit can't reintroduce that bug by reordering things. */
+  #order-queue {
+    max-height: 55vh;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+    /* The "Make This Next" badge pokes above its card via a negative offset
+       (see .badge); without headroom here, the scroll clipping boundary
+       cuts it off when that card is first in the list. */
+    padding-top: 0.75rem;
   }
 }
