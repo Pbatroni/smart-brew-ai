@@ -3,6 +3,8 @@ import os
 import re
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -10,6 +12,164 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(__file__).resolve().parent / "data"
 DATA_FILE = DATA_DIR / "orders.json"
+
+# ---------------------------------------------------------------------------
+# Dynamic coffee pricing (Alpha Vantage COFFEE commodity index)
+#
+# The API key lives in an environment variable, never in source — this file
+# is public (pushed to GitHub, including a GitHub Pages deployment), so a
+# hardcoded key would leak immediately. Set it before starting the server:
+#   export ALPHA_VANTAGE_API_KEY=your_key_here
+#   python3 server/server.py
+# With no key set (or if the request fails/rate-limits/returns something we
+# don't recognize), pricing quietly falls back to unadjusted base prices —
+# the app must keep working either way.
+# ---------------------------------------------------------------------------
+ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY")
+ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query?function=COFFEE&interval=monthly&apikey={key}"
+
+REFERENCE_COFFEE_PRICE = 5.0  # requirement: initial reference coffee price
+MIN_PRICE_MULTIPLIER = 0.90  # menu prices can't fall more than 10%...
+MAX_PRICE_MULTIPLIER = 1.15  # ...or rise more than 15%, regardless of how far the market moves
+
+# Alpha Vantage's COFFEE series is published monthly, so re-fetching more
+# often than this just burns API quota for data that hasn't changed. This is
+# the "cache so we don't call the API on every menu click" requirement.
+COFFEE_PRICE_CACHE_TTL_SECONDS = 60 * 60
+
+# Base price per drink, keyed by the exact preset name. Must stay in sync
+# with js/presets.js's DRINK_PRESETS — the server is what actually stamps a
+# price onto an order, the client copy only drives the live menu preview.
+PRESET_BASE_PRICES = {
+    "Espresso": 2.50,
+    "Americano": 3.00,
+    "Drip Coffee": 2.25,
+    "Latte": 4.25,
+    "Cappuccino": 4.00,
+    "Mocha": 4.75,
+    "Cold Brew": 4.00,
+    "Matcha Latte": 4.50,
+}
+DEFAULT_BASE_PRICE = 4.00  # used for a custom/typed-in drink that isn't a known preset
+
+# In-memory cache: {"value": <float coffee price or None>, "fetched_at": <epoch seconds>}
+_coffee_price_cache = {"value": None, "fetched_at": 0.0}
+
+
+def fetch_coffee_price():
+    """
+    Calls the Alpha Vantage COFFEE endpoint and returns the most recent
+    valid monthly price (data[0].value) as a float, or None if anything
+    about the request or response isn't usable.
+
+    This deliberately never raises for expected failure modes (missing key,
+    network error, rate limit, malformed body) — every caller must be able
+    to treat None as "fall back to base prices" without a try/except of
+    their own.
+    """
+    if not ALPHA_VANTAGE_API_KEY:
+        print("ALPHA_VANTAGE_API_KEY is not set; using base prices", file=sys.stderr)
+        return None
+
+    # This server is single-threaded (HTTPServer, not ThreadingHTTPServer —
+    # see write_orders' comment for why), so a slow/hanging Alpha Vantage
+    # response stalls every station's poll until this call returns. The
+    # hourly cache means that's rare, but keep the timeout short so the
+    # worst case is bounded rather than a multi-second freeze for everyone.
+    url = ALPHA_VANTAGE_URL.format(key=ALPHA_VANTAGE_API_KEY)
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            raw = resp.read()
+    except (urllib.error.URLError, TimeoutError, OSError) as err:
+        print(f"coffee price request failed: {err}", file=sys.stderr)
+        return None
+
+    try:
+        body = json.loads(raw)
+    except json.JSONDecodeError as err:
+        print(f"coffee price response was not valid JSON: {err}", file=sys.stderr)
+        return None
+
+    # Alpha Vantage answers HTTP 200 even when it's rejecting the request —
+    # a bad/missing key or a hit rate limit comes back as a "Note" or
+    # "Error Message" or "Information" key instead of "data". Any of those
+    # (or a "data" that isn't a non-empty list) means: no usable price.
+    data = body.get("data")
+    if not isinstance(data, list) or not data:
+        reason = body.get("Note") or body.get("Error Message") or body.get("Information") or body
+        print(f"coffee price response had no usable data: {reason}", file=sys.stderr)
+        return None
+
+    try:
+        value = float(data[0]["value"])
+    except (KeyError, TypeError, ValueError) as err:
+        print(f"coffee price data[0].value was invalid: {err}", file=sys.stderr)
+        return None
+
+    return value
+
+
+def get_coffee_pricing():
+    """
+    Returns the current price-adjustment info, using a cached Alpha Vantage
+    value when available (re-fetching at most once per
+    COFFEE_PRICE_CACHE_TTL_SECONDS) and falling back to an unadjusted 1.0
+    multiplier — i.e. base prices — whenever no valid value has ever been
+    fetched. A failed refresh attempt does not clear a previously good
+    cached value; it just tries again after the next TTL window.
+    """
+    now = time.time()
+    if now - _coffee_price_cache["fetched_at"] > COFFEE_PRICE_CACHE_TTL_SECONDS:
+        fetched = fetch_coffee_price()
+        _coffee_price_cache["fetched_at"] = now
+        if fetched is not None:
+            _coffee_price_cache["value"] = fetched
+
+    current_price = _coffee_price_cache["value"]
+    if current_price is None:
+        multiplier = 1.0
+        source = "fallback"
+    else:
+        # requirement: adjustedPrice = basePrice * (currentCoffeePrice / referenceCoffeePrice),
+        # clamped to [0.90, 1.15] so a wild commodity swing can't blow up the menu.
+        raw_multiplier = current_price / REFERENCE_COFFEE_PRICE
+        multiplier = max(MIN_PRICE_MULTIPLIER, min(MAX_PRICE_MULTIPLIER, raw_multiplier))
+        source = "api"
+
+    return {
+        "multiplier": round(multiplier, 4),
+        "source": source,
+        "currentCoffeePrice": current_price,
+        "referenceCoffeePrice": REFERENCE_COFFEE_PRICE,
+    }
+
+
+# Case-insensitive so a hand-typed "americano" prices the same as clicking
+# the Americano preset — must match js/presets.js's getBasePriceForDrink,
+# which already does a case-insensitive match; an earlier version of this
+# function did an exact-case dict lookup and silently priced typed-in names
+# at DEFAULT_BASE_PRICE instead of their real preset price whenever the
+# barista's capitalization didn't exactly match.
+_PRESET_BASE_PRICES_LOWER = {name.lower(): price for name, price in PRESET_BASE_PRICES.items()}
+
+
+def price_for_drink(drink_name, quantity, pricing):
+    """
+    Computes the locked-in per-unit and line-total price for one order, given
+    a specific coffeePricing snapshot (see get_coffee_pricing). Called once
+    at order-creation time; the result is stored on the order and never
+    recomputed from a live price afterward, so an order's price can't drift
+    after the customer sees and agrees to it.
+    """
+    base_price = _PRESET_BASE_PRICES_LOWER.get(drink_name.strip().lower(), DEFAULT_BASE_PRICE)
+    unit_price = round(base_price * pricing["multiplier"], 2)
+    return {
+        "basePrice": base_price,
+        "unitPrice": unit_price,
+        "lineTotal": round(unit_price * quantity, 2),
+        "priceMultiplier": pricing["multiplier"],
+        "priceSource": pricing["source"],
+    }
 
 VALID_SIZES = {"small", "medium", "large"}
 VALID_PRIORITIES = {"normal", "high", "urgent"}
@@ -112,7 +272,13 @@ class Handler(SimpleHTTPRequestHandler):
             # this machine, so wait-time "aging" escalation (computed against
             # order.timeReceived, a server stamp) reads consistently across
             # stations even if a phone/tablet's local clock has drifted.
-            self._send_json(200, {"orders": read_orders(), "serverTime": int(time.time() * 1000)})
+            # coffeePricing rides along on the same poll so the menu's live
+            # price preview stays current without a separate endpoint/request.
+            self._send_json(200, {
+                "orders": read_orders(),
+                "serverTime": int(time.time() * 1000),
+                "coffeePricing": get_coffee_pricing(),
+            })
             return
         super().do_GET()
 
@@ -129,14 +295,23 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json(400, {"error": error})
                 return
 
+            drink_name = str(fields["drinkName"]).strip()
+            quantity = fields["quantity"]
+            # Price is computed and locked in right here, once, at creation —
+            # never recalculated from a later/live coffee price. This is what
+            # makes the price the customer saw on the menu the price they
+            # actually pay, even if the market (or the cache) moves later.
+            pricing = price_for_drink(drink_name, quantity, get_coffee_pricing())
+
             order = {
                 "id": uuid.uuid4().hex,
-                "drinkName": str(fields["drinkName"]).strip(),
+                "drinkName": drink_name,
                 "size": fields["size"],
-                "quantity": fields["quantity"],
+                "quantity": quantity,
                 "prepTimeMinutes": fields["prepTimeMinutes"],
                 "priority": fields["priority"],
                 "loyaltyMember": bool(fields.get("loyaltyMember", False)),
+                **pricing,
                 "timeReceived": int(time.time() * 1000),
                 "status": "waiting",
                 "version": 1,
@@ -214,6 +389,15 @@ class Handler(SimpleHTTPRequestHandler):
                     target[key] = bool(fields[key])
                 else:
                     target[key] = fields[key]
+
+            # Editing the drink or quantity is a correction to what was
+            # ordered, not a re-pricing event — recompute using the SAME
+            # multiplier/source locked in at creation (never a fresh live
+            # fetch), so the market-adjustment the customer saw never moves,
+            # only the base price and/or line total it's applied to.
+            if "drinkName" in edit_keys or "quantity" in edit_keys:
+                locked_pricing = {"multiplier": target["priceMultiplier"], "source": target["priceSource"]}
+                target.update(price_for_drink(target["drinkName"], target["quantity"], locked_pricing))
 
         if "status" in fields:
             target["status"] = status

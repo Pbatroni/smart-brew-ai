@@ -87,6 +87,31 @@ function demoWriteOrders(orders) {
   localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(orders));
 }
 
+// Demo mode never has a real backend (or a safe place to keep an API key —
+// anything shipped to the browser in a static deploy is public), so it
+// always prices at the unadjusted base rate. This is exactly the same
+// "fall back to base prices" behavior the real server uses when Alpha
+// Vantage is unreachable, just permanent here rather than conditional.
+const DEMO_REFERENCE_COFFEE_PRICE = 5.0;
+
+// Note: this rounds with Math.round(x*100)/100 (half-up), while
+// server.py's price_for_drink uses Python's round() (banker's rounding) —
+// they can disagree by a cent at an exact .xx5 boundary. Currently
+// unobservable here since demo mode always uses multiplier 1 (so unitPrice
+// reduces to the already-2-decimal basePrice, never hitting a .xx5 case),
+// but worth fixing for real parity if demo mode ever gets a non-1 multiplier.
+function demoPriceForDrink(drinkName, quantity, pricing) {
+  const basePrice = getBasePriceForDrink(drinkName);
+  const unitPrice = Math.round(basePrice * pricing.multiplier * 100) / 100;
+  return {
+    basePrice,
+    unitPrice,
+    lineTotal: Math.round(unitPrice * quantity * 100) / 100,
+    priceMultiplier: pricing.multiplier,
+    priceSource: pricing.source,
+  };
+}
+
 function demoValidateFields(fields) {
   const drinkName = String(fields.drinkName || '').trim();
   if (!drinkName) return 'drinkName is required';
@@ -99,21 +124,32 @@ function demoValidateFields(fields) {
 }
 
 async function demoFetchOrders() {
-  return { orders: demoReadOrders(), serverTime: Date.now() };
+  return {
+    orders: demoReadOrders(),
+    serverTime: Date.now(),
+    coffeePricing: {
+      multiplier: 1,
+      source: 'fallback',
+      currentCoffeePrice: null,
+      referenceCoffeePrice: DEMO_REFERENCE_COFFEE_PRICE,
+    },
+  };
 }
 
 async function demoCreateOrder(fields) {
   const error = demoValidateFields(fields);
   if (error) throw new ApiError(error, 400);
 
+  const drinkName = String(fields.drinkName).trim();
   const order = {
     id: generateDemoId(),
-    drinkName: String(fields.drinkName).trim(),
+    drinkName,
     size: fields.size,
     quantity: fields.quantity,
     prepTimeMinutes: fields.prepTimeMinutes,
     priority: fields.priority,
     loyaltyMember: Boolean(fields.loyaltyMember),
+    ...demoPriceForDrink(drinkName, fields.quantity, { multiplier: 1, source: 'fallback' }),
     timeReceived: Date.now(),
     status: 'waiting',
     version: 1,
@@ -168,6 +204,16 @@ async function demoPatchOrder(id, fields) {
       else if (k === 'loyaltyMember') target[k] = Boolean(fields[k]);
       else target[k] = fields[k];
     });
+
+    // Same rule as the real server: editing the drink or quantity re-prices
+    // using the multiplier/source already locked onto this order, never a
+    // fresh one — the market adjustment the customer saw doesn't move.
+    if (editKeys.includes('drinkName') || editKeys.includes('quantity')) {
+      Object.assign(target, demoPriceForDrink(target.drinkName, target.quantity, {
+        multiplier: target.priceMultiplier,
+        source: target.priceSource,
+      }));
+    }
   }
 
   if ('status' in fields) target.status = fields.status;

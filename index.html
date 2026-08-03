@@ -22,6 +22,7 @@
     <section class="order-form-section">
       <h2>New Order</h2>
       <div id="preset-list" class="preset-list"></div>
+      <p id="pricing-note" class="pricing-note">Prices are adjusted using current global coffee market data.</p>
       <form id="order-form" novalidate>
         <div class="form-row">
           <label for="drink-name">Drink Name</label>
@@ -75,6 +76,15 @@
   </main>
 
   <div id="toast-container" class="toast-container"></div>
+
+  <div id="closeout-modal" class="closeout-modal" hidden>
+    <div class="closeout-modal__backdrop"></div>
+    <div class="closeout-modal__panel">
+      <h2>Order Complete</h2>
+      <div id="closeout-summary"></div>
+      <button type="button" id="closeout-close-btn">Close</button>
+    </div>
+  </div>
 
   <script src="js/orders.js"></script>
   <script src="js/prioritization.js"></script>

@@ -122,12 +122,32 @@ section {
   padding: 0.5rem 0.9rem;
   font-size: 0.85rem;
   font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.preset-btn__price {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+.preset-btn--active .preset-btn__price {
+  color: #fff;
 }
 
 .preset-btn--active {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: #fff;
+}
+
+.pricing-note {
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--color-muted);
+  margin: -0.5rem 0 1rem;
 }
 
 .form-row {
@@ -362,6 +382,62 @@ button {
   letter-spacing: 0.04em;
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
+}
+
+.closeout-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.closeout-modal[hidden] {
+  display: none;
+}
+
+.closeout-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(43, 29, 20, 0.5);
+}
+
+.closeout-modal__panel {
+  position: relative;
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.closeout-modal__panel h2 {
+  margin: 0 0 1rem;
+}
+
+.closeout-line {
+  margin: 0 0 0.5rem;
+}
+
+.closeout-total {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.closeout-note {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+  margin: 0.75rem 0 1.25rem;
+}
+
+#closeout-close-btn {
+  width: 100%;
+  background: var(--color-accent);
+  color: #fff;
 }
 
 @media (max-width: 480px) {

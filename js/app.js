@@ -45,6 +45,45 @@ const loyaltyMemberInput = document.getElementById('loyalty-member');
 const toastContainerEl = document.getElementById('toast-container');
 const syncStatusEl = document.getElementById('sync-status');
 const soundToggleBtn = document.getElementById('sound-toggle');
+const pricingNoteEl = document.getElementById('pricing-note');
+const closeoutModalEl = document.getElementById('closeout-modal');
+const closeoutSummaryEl = document.getElementById('closeout-summary');
+const closeoutCloseBtn = document.getElementById('closeout-close-btn');
+
+// ---- Dynamic coffee pricing (display side) ----
+// The server (or, in demo mode, the localStorage backend) is the source of
+// truth for pricing — it stamps a locked-in unitPrice/lineTotal onto every
+// order at creation time, from whatever coffeePricing snapshot is current
+// then. Everything here just mirrors that same multiplier to show a live
+// "menu" preview BEFORE an order is submitted; it never decides what an
+// order actually gets charged.
+let coffeePricing = null; // null until the first successful fetch = "loading" state
+
+function formatPrice(amount) {
+  return `$${Number(amount).toFixed(2)}`;
+}
+
+function getMenuPreviewPrice(basePrice) {
+  const multiplier = coffeePricing ? coffeePricing.multiplier : 1;
+  return Math.round(basePrice * multiplier * 100) / 100;
+}
+
+function updatePresetPrices() {
+  presetListEl.querySelectorAll('.preset-btn__price').forEach((el) => {
+    const basePrice = Number(el.dataset.basePrice);
+    el.textContent = coffeePricing ? formatPrice(getMenuPreviewPrice(basePrice)) : 'loading…';
+  });
+}
+
+function updatePricingNote() {
+  if (!coffeePricing) {
+    pricingNoteEl.textContent = 'Prices are adjusted using current global coffee market data. (Loading current price…)';
+  } else if (coffeePricing.source === 'fallback') {
+    pricingNoteEl.textContent = 'Prices are adjusted using current global coffee market data. (Live market data unavailable right now — showing standard prices.)';
+  } else {
+    pricingNoteEl.textContent = 'Prices are adjusted using current global coffee market data.';
+  }
+}
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -54,7 +93,12 @@ function escapeHtml(value) {
 
 function renderPresets() {
   presetListEl.innerHTML = DRINK_PRESETS.map(
-    (preset, index) => `<button type="button" class="preset-btn" data-index="${index}">${escapeHtml(preset.drinkName)}</button>`
+    (preset, index) => `
+      <button type="button" class="preset-btn" data-index="${index}">
+        <span class="preset-btn__name">${escapeHtml(preset.drinkName)}</span>
+        <span class="preset-btn__price" data-base-price="${preset.basePrice}">loading…</span>
+      </button>
+    `
   ).join('');
 
   presetListEl.querySelectorAll('.preset-btn').forEach((btn) => {
@@ -71,6 +115,8 @@ function renderPresets() {
       quantityInput.select();
     });
   });
+
+  updatePresetPrices();
 }
 
 function clearActivePreset() {
@@ -234,12 +280,15 @@ async function refreshOrders() {
   if (refreshInFlight || pendingLocalMutations > 0) return;
   refreshInFlight = true;
   try {
-    const { orders: fetchedOrders, serverTime } = await fetchOrders();
+    const { orders: fetchedOrders, serverTime, coffeePricing: fetchedPricing } = await fetchOrders();
     diffAndNotify(fetchedOrders);
     orders = fetchedOrders;
     knownOrders = new Map(fetchedOrders.map((o) => [o.id, { status: o.status, drinkName: o.drinkName }]));
     isInitialLoad = false;
     clockOffsetMs = serverTime - Date.now();
+    coffeePricing = fetchedPricing;
+    updatePresetPrices();
+    updatePricingNote();
     setConnected(true);
     // Don't blow away an in-progress edit's unsaved keystrokes on a background poll.
     if (!editingOrderId) render();
@@ -304,6 +353,7 @@ function renderOrderCard(order, { isRecommended = false } = {}) {
         <span>Prep: ${order.prepTimeMinutes} min</span>
         <span>${statusLabel}</span>
         <span class="wait-time wait-time--${agingTier}">${agingIcon}${formatWaitTime(order.timeReceived)}</span>
+        <span>Total: ${formatPrice(order.lineTotal)}</span>
       </div>
       <div class="order-card__actions">
         <button type="button" class="status-btn" data-id="${order.id}" data-next-status="${nextStatus}" data-drink-name="${drinkName}" data-version="${order.version}">${nextLabel}</button>
@@ -361,6 +411,32 @@ function renderEditForm(order) {
   `;
 }
 
+// Close-out summary: the small "receipt" shown when an order is marked
+// complete. Deliberately reads price fields straight off the order object
+// the server/demo backend just returned — those were locked in at order
+// creation (or corrected-at-edit) time, never recomputed here, so this is
+// guaranteed to match what the customer actually agreed to on the menu.
+function showCloseoutSummary(order) {
+  const priceNote = order.priceSource === 'api'
+    ? 'Priced using live coffee market data.'
+    : 'Priced at standard rates (live market data was unavailable when this order was placed).';
+
+  closeoutSummaryEl.innerHTML = `
+    <p class="closeout-line"><strong>${order.quantity}x ${escapeHtml(order.drinkName)}</strong> (${order.size})</p>
+    <p class="closeout-line">Unit price: ${formatPrice(order.unitPrice)}</p>
+    <p class="closeout-line closeout-total">Total: ${formatPrice(order.lineTotal)}</p>
+    <p class="closeout-note">${priceNote}</p>
+  `;
+  closeoutModalEl.hidden = false;
+}
+
+closeoutCloseBtn.addEventListener('click', () => {
+  closeoutModalEl.hidden = true;
+});
+closeoutModalEl.querySelector('.closeout-modal__backdrop').addEventListener('click', () => {
+  closeoutModalEl.hidden = true;
+});
+
 function wireCardButtons() {
   document.querySelectorAll('.status-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -370,6 +446,7 @@ function wireCardButtons() {
         const updated = await mutateAndMarkKnown(updateOrderStatus(id, nextStatus, Number(version)));
         if (nextStatus === 'completed') {
           showUndoToast(id, drinkName, 'in-progress', updated.version, 'Order completed');
+          showCloseoutSummary(updated);
         }
         await refreshOrders();
       } catch (err) {
@@ -503,5 +580,6 @@ formEl.addEventListener('submit', async (event) => {
 });
 
 renderPresets();
+updatePricingNote();
 refreshOrders();
 setInterval(refreshOrders, POLL_INTERVAL_MS);
